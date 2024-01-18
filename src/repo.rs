@@ -7,6 +7,7 @@ use std::{
 pub const FURSION_DIR: &'static str = ".fursion";
 
 use crate::{
+    commit::Commit,
     error::{Error, RepoErrorReason},
     remote::{Remote, REMOTE_FILE_NAME},
 };
@@ -15,6 +16,7 @@ use crate::{
 pub struct Repo {
     pub files: Vec<File>,
     pub remotes: Vec<Remote>,
+    pub history: Vec<Commit>,
 }
 
 #[derive(Debug)]
@@ -59,7 +61,11 @@ impl Repo {
 
         let files = recursive_read_dir(path, EXCLUDE_FURSION_DIR)?;
 
-        Ok(Repo { files, remotes })
+        Ok(Repo {
+            files,
+            remotes,
+            history: Vec::new(),
+        })
     }
 
     pub fn init(path: &Path) -> Result<Self, Error> {
@@ -75,6 +81,15 @@ impl Repo {
         Ok(Repo {
             remotes: Vec::new(),
             files: recursive_read_dir(path, EXCLUDE_FURSION_DIR)?,
+            history: Vec::new(),
+        })
+    }
+
+    fn commit(mut self, message: &str) -> Result<Commit, Error> {
+        self.history;
+        Ok(Commit {
+            message: "",
+            id: "",
         })
     }
 }
