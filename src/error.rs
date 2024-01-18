@@ -2,12 +2,14 @@ use std::path::PathBuf;
 
 #[derive(Debug)]
 pub enum Error {
-    RepoReadFailed(RepoReadFailedReason),
+    RepoReadFailed(RepoErrorReason),
+    RepoInitFailed(RepoErrorReason),
     Unknown(String),
 }
 
 #[derive(Debug)]
-pub enum RepoReadFailedReason {
+pub enum RepoErrorReason {
+    CantCreateFile(PathBuf, String),
     CantReadFile(PathBuf, String),
     PathNotFound(PathBuf),
     DirIsNotAFursionRepo(PathBuf),

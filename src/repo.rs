@@ -7,7 +7,7 @@ use std::{
 pub const FURSION_DIR: &'static str = ".fursion";
 
 use crate::{
-    error::{Error, RepoReadFailedReason},
+    error::{Error, RepoErrorReason},
     remote::{Remote, REMOTE_FILE_NAME},
 };
 
@@ -24,10 +24,12 @@ pub struct File {
     pub metadata: Metadata,
 }
 
+const EXCLUDE_FURSION_DIR: fn(&OsStr) -> bool = |file_name| file_name != FURSION_DIR;
+
 impl Repo {
     pub fn read(path: &Path) -> Result<Self, Error> {
         if !Path::exists(path) {
-            return Err(Error::RepoReadFailed(RepoReadFailedReason::PathNotFound(
+            return Err(Error::RepoReadFailed(RepoErrorReason::PathNotFound(
                 path.to_owned(),
             )));
         }
@@ -35,14 +37,14 @@ impl Repo {
         let fursion_dir = path.join(FURSION_DIR);
         if !Path::exists(&fursion_dir) {
             return Err(Error::RepoReadFailed(
-                RepoReadFailedReason::DirIsNotAFursionRepo(path.to_owned()),
+                RepoErrorReason::DirIsNotAFursionRepo(path.to_owned()),
             ));
         }
 
         let remotes_path = fursion_dir.join(REMOTE_FILE_NAME);
         let remotes_data = if Path::exists(&remotes_path) {
             fs::read(remotes_path.clone()).map_err(|e| {
-                Error::RepoReadFailed(RepoReadFailedReason::CantReadFile(
+                Error::RepoReadFailed(RepoErrorReason::CantReadFile(
                     remotes_path.clone(),
                     e.to_string(),
                 ))
@@ -55,9 +57,25 @@ impl Repo {
             std::str::from_utf8(&remotes_data).map_err(|e| Error::Unknown(e.to_string()))?;
         let remotes = remotes_str.lines().map(|s| Remote::new(s)).collect();
 
-        let files = recursive_read_dir(path, |file_name| file_name != FURSION_DIR)?;
+        let files = recursive_read_dir(path, EXCLUDE_FURSION_DIR)?;
 
         Ok(Repo { files, remotes })
+    }
+
+    pub fn init(path: &Path) -> Result<Self, Error> {
+        let fursion_path = path.join(FURSION_DIR);
+
+        fs::create_dir_all(&fursion_path).map_err(|e| {
+            Error::RepoInitFailed(RepoErrorReason::CantCreateFile(
+                path.to_owned(),
+                e.to_string(),
+            ))
+        })?;
+
+        Ok(Repo {
+            remotes: Vec::new(),
+            files: recursive_read_dir(path, EXCLUDE_FURSION_DIR)?,
+        })
     }
 }
 
@@ -66,10 +84,10 @@ fn recursive_read_dir(
     exclude: fn(entry_name: &OsStr) -> bool,
 ) -> Result<Vec<File>, Error> {
     let files = fs::read_dir(path)
-        .map_err(|_| Error::RepoReadFailed(RepoReadFailedReason::PathNotFound(path.to_owned())))?
+        .map_err(|_| Error::RepoReadFailed(RepoErrorReason::PathNotFound(path.to_owned())))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| {
-            Error::RepoReadFailed(RepoReadFailedReason::CantReadFile(
+            Error::RepoReadFailed(RepoErrorReason::CantReadFile(
                 path.to_owned(),
                 e.to_string(),
             ))
@@ -80,9 +98,7 @@ fn recursive_read_dir(
         .filter(|f| exclude(&f.file_name()))
         .map(|entry| {
             let metadata = entry.metadata().map_err(|e| {
-                Error::RepoReadFailed(RepoReadFailedReason::FailedToReadFileMetadata(
-                    e.to_string(),
-                ))
+                Error::RepoReadFailed(RepoErrorReason::FailedToReadFileMetadata(e.to_string()))
             })?;
 
             if metadata.is_dir() {
