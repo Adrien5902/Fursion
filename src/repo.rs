@@ -1,10 +1,11 @@
 use std::{
     ffi::{OsStr, OsString},
-    fs::{self, Metadata},
+    fs,
     path::{Path, PathBuf},
 };
 
-pub const FURSION_DIR: &'static str = ".fursion";
+use futures;
+use serde::Deserialize;
 
 use crate::{
     commit::Commit,
@@ -12,18 +13,19 @@ use crate::{
     remote::{Remote, REMOTE_FILE_NAME},
 };
 
-#[derive(Debug)]
+pub const FURSION_DIR: &str = ".fursion";
+
+#[derive(Debug, Deserialize)]
 pub struct Repo {
     pub files: Vec<File>,
     pub remotes: Vec<Remote>,
     pub history: Vec<Commit>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct File {
     pub path: PathBuf,
     pub name: OsString,
-    pub metadata: Metadata,
 }
 
 const EXCLUDE_FURSION_DIR: fn(&OsStr) -> bool = |file_name| file_name != FURSION_DIR;
@@ -57,7 +59,7 @@ impl Repo {
 
         let remotes_str =
             std::str::from_utf8(&remotes_data).map_err(|e| Error::Unknown(e.to_string()))?;
-        let remotes = remotes_str.lines().map(|s| Remote::new(s)).collect();
+        let remotes = remotes_str.lines().map(Remote::new).collect();
 
         let files = recursive_read_dir(path, EXCLUDE_FURSION_DIR)?;
 
@@ -85,12 +87,34 @@ impl Repo {
         })
     }
 
-    fn commit(mut self, message: &str) -> Result<Commit, Error> {
-        self.history;
-        Ok(Commit {
-            message: "",
-            id: "",
-        })
+    pub fn commit(&mut self, message: &str) -> Result<(), Error> {
+        let commit = Commit::new(message);
+
+        self.history.push(commit);
+        Ok(())
+    }
+
+    pub fn push(&self) {
+        self.history.iter().for_each(|commit| {})
+    }
+
+    pub fn pull(&mut self) {}
+
+    pub async fn fetch(&self) -> Vec<Result<Repo, Error>> {
+        async fn fetch_remote(remote: &Remote) -> Result<Repo, Error> {
+            let res = reqwest::get(remote.get())
+                .await
+                .map_err(|e| Error::RepoFetchFailed(e.to_string()))?;
+
+            let repo = res
+                .json()
+                .await
+                .map_err(|e| Error::RepoFetchFailed(e.to_string()))?;
+            Ok(repo)
+        }
+
+        let iter = self.remotes.iter().map(fetch_remote);
+        futures::future::join_all(iter).await
     }
 }
 
@@ -122,7 +146,6 @@ fn recursive_read_dir(
                 Ok(vec![File {
                     path: entry.path(),
                     name: entry.file_name(),
-                    metadata,
                 }])
             }
         })

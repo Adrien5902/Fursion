@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub enum Error {
     RepoReadFailed(RepoErrorReason),
     RepoInitFailed(RepoErrorReason),
+    RepoFetchFailed(String),
     Unknown(String),
 }
 

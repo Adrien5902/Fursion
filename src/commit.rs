@@ -1,14 +1,18 @@
-#[derive(Debug)]
+use rand;
+
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
 pub struct Commit {
     message: String,
-    id: u32,
+    id: [u16; 5],
 }
 
 impl Commit {
-    fn new(message: &str) -> Self {
+    pub fn new(message: &str) -> Self {
         Commit {
             message: message.to_owned(),
-            id: ,
+            id: rand::random(),
         }
     }
 }
