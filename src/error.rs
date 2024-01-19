@@ -1,7 +1,7 @@
 use actix_web::{http::header::ContentType, HttpResponse};
 use reqwest::StatusCode;
 use serde::Serialize;
-use std::{default, fmt::Display, path::PathBuf};
+use std::{fmt::Display, path::PathBuf};
 
 #[derive(Debug, Serialize)]
 pub enum Error {

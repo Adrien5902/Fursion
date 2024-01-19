@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{repo::Repo, server::Server};
+use crate::{commit::Commit, repo::Repo, server::Server};
 
 #[test]
 fn read() {
@@ -11,6 +11,12 @@ fn read() {
 #[test]
 fn init() {
     let repo = Repo::init(Path::new("C:\\Users\\Administrateur\\Desktop\\Test")).unwrap();
+}
+
+#[test]
+fn commit() {
+    let commit = Commit::new("test");
+    panic!("{:?}", commit.hex_id());
 }
 
 #[actix_web::test]

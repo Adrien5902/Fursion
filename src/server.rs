@@ -12,6 +12,7 @@ use crate::{
 static SERVER_STATE: Lazy<Arc<Mutex<ServerState>>> =
     Lazy::new(|| Arc::new(Mutex::new(ServerState::default())));
 
+/// Repo hosting commands wrapper
 pub struct Server;
 
 #[derive(Debug, Default)]

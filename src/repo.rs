@@ -15,11 +15,16 @@ use crate::{
 
 pub const FURSION_DIR: &str = ".fursion";
 
+/// Repository Object
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Repo {
+    /// List of files in the Repo
     pub files: Vec<File>,
+    /// List of the remotes connected to this repo
     pub remotes: Vec<Remote>,
+    /// The commit history of the repo
     pub history: Vec<Commit>,
+    /// The repo metadata mainly author name and repo name
     pub metadata: RepoMetadata,
 }
 
@@ -148,10 +153,9 @@ impl Repo {
         let iter = self.remotes.iter().map(fetch_remote);
         futures::future::join_all(iter).await
     }
-
-    pub fn host() {}
 }
 
+/// Recursively reads a directory outputing a vec of {File} object
 fn recursive_read_dir(
     path: &Path,
     exclude: fn(entry_name: &OsStr) -> bool,
