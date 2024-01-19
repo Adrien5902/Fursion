@@ -5,7 +5,7 @@ use std::{
 };
 
 use futures;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commit::Commit,
@@ -15,14 +15,21 @@ use crate::{
 
 pub const FURSION_DIR: &str = ".fursion";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Repo {
     pub files: Vec<File>,
     pub remotes: Vec<Remote>,
     pub history: Vec<Commit>,
+    pub metadata: RepoMetadata,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RepoMetadata {
+    pub author: String,
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct File {
     pub path: PathBuf,
     pub name: OsString,
@@ -63,7 +70,22 @@ impl Repo {
 
         let files = recursive_read_dir(path, EXCLUDE_FURSION_DIR)?;
 
+        let metadata_path = path.join("metadata");
+        let metadata = serde_json::from_slice(&fs::read(metadata_path.clone()).map_err(|e| {
+            Error::RepoReadFailed(RepoErrorReason::CantReadFile(
+                metadata_path.clone(),
+                e.to_string(),
+            ))
+        })?)
+        .map_err(|e| {
+            Error::RepoReadFailed(RepoErrorReason::CantReadFile(
+                metadata_path.clone(),
+                e.to_string(),
+            ))
+        })?;
+
         Ok(Repo {
+            metadata,
             files,
             remotes,
             history: Vec::new(),
@@ -81,6 +103,16 @@ impl Repo {
         })?;
 
         Ok(Repo {
+            metadata: RepoMetadata {
+                author: "".to_string(),
+                name: path
+                    .file_name()
+                    .ok_or(Error::RepoInitFailed(
+                        RepoErrorReason::CantInitAtRootDiskLocation,
+                    ))?
+                    .to_string_lossy()
+                    .to_string(),
+            },
             remotes: Vec::new(),
             files: recursive_read_dir(path, EXCLUDE_FURSION_DIR)?,
             history: Vec::new(),
@@ -116,6 +148,8 @@ impl Repo {
         let iter = self.remotes.iter().map(fetch_remote);
         futures::future::join_all(iter).await
     }
+
+    pub fn host() {}
 }
 
 fn recursive_read_dir(

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::repo::Repo;
+use crate::{repo::Repo, server::Server};
 
 #[test]
 fn read() {
@@ -11,4 +11,9 @@ fn read() {
 #[test]
 fn init() {
     let repo = Repo::init(Path::new("C:\\Users\\Administrateur\\Desktop\\Test")).unwrap();
+}
+
+#[actix_web::test]
+async fn host() {
+    Server::new().await;
 }

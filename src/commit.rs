@@ -1,8 +1,8 @@
 use rand;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Commit {
     message: String,
     id: [u16; 5],
