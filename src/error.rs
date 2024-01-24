@@ -1,7 +1,7 @@
 use actix_web::{http::header::ContentType, HttpResponse};
 use reqwest::StatusCode;
 use serde::Serialize;
-use std::{fmt::Display, path::PathBuf};
+use std::{fmt::Display, path::PathBuf, str::Utf8Error};
 
 #[derive(Debug, Serialize)]
 pub enum Error {
@@ -9,6 +9,7 @@ pub enum Error {
     RepoInitFailed(RepoErrorReason),
     RepoFetchFailed(String),
     HostError(HostErrorKind),
+    CommitParseFailed(CommitParseFailedReason),
     Unknown(String),
 }
 
@@ -29,11 +30,18 @@ impl actix_web::error::ResponseError for Error {
     }
 }
 
-impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self {
-        Error::Unknown(value.to_string())
-    }
+macro_rules! impl_from_error {
+    ($from_type:ty) => {
+        impl From<$from_type> for Error {
+            fn from(value: $from_type) -> Self {
+                Error::Unknown(value.to_string())
+            }
+        }
+    };
 }
+
+impl_from_error!(Utf8Error);
+impl_from_error!(std::io::Error);
 
 #[derive(Debug, Serialize)]
 pub enum RepoErrorReason {
@@ -49,4 +57,10 @@ pub enum RepoErrorReason {
 pub enum HostErrorKind {
     RepoNotFound,
     StateMutexThreadLocked,
+}
+
+#[derive(Debug, Serialize)]
+pub enum CommitParseFailedReason {
+    FileChangeDataNotFound,
+    FileChangeDataMalformed,
 }

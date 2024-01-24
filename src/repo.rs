@@ -1,6 +1,6 @@
 use std::{
     ffi::{OsStr, OsString},
-    fs,
+    fs, mem,
     path::{Path, PathBuf},
 };
 
@@ -8,7 +8,7 @@ use futures;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    commit::Commit,
+    commit::{Commit, FileChange},
     error::{Error, RepoErrorReason},
     remote::{Remote, REMOTE_FILE_NAME},
 };
@@ -26,6 +26,8 @@ pub struct Repo {
     pub history: Vec<Commit>,
     /// The repo metadata mainly author name and repo name
     pub metadata: RepoMetadata,
+    /// List of stated changes in the repo
+    stated_changes: Vec<FileChange>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -89,7 +91,11 @@ impl Repo {
             ))
         })?;
 
+        let state_path = path.join("state");
+        let stated_changes = FileChange::from_file(&state_path)?;
+
         Ok(Repo {
+            stated_changes,
             metadata,
             files,
             remotes,
@@ -118,6 +124,7 @@ impl Repo {
                     .to_string_lossy()
                     .to_string(),
             },
+            stated_changes: Vec::new(),
             remotes: Vec::new(),
             files: recursive_read_dir(path, EXCLUDE_FURSION_DIR)?,
             history: Vec::new(),
@@ -125,10 +132,21 @@ impl Repo {
     }
 
     pub fn commit(&mut self, message: &str) -> Result<(), Error> {
-        let commit = Commit::new(message);
+        let changes = if self.stated_changes.len() != 0 {
+            mem::replace(&mut self.stated_changes, Vec::new())
+        } else {
+            self.get_diff()?
+        };
+
+        let commit = Commit::new(message, changes);
 
         self.history.push(commit);
         Ok(())
+    }
+
+    ///WIP
+    pub fn get_diff(&self) -> Result<Vec<FileChange>, Error> {
+        Ok(Vec::new())
     }
 
     pub fn push(&self) {
@@ -155,7 +173,7 @@ impl Repo {
     }
 }
 
-/// Recursively reads a directory outputing a vec of {File} object
+/// Recursively reads a directory outputting a vec of {File} object
 fn recursive_read_dir(
     path: &Path,
     exclude: fn(entry_name: &OsStr) -> bool,

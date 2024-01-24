@@ -1,5 +1,8 @@
 {
     "rust-analyzer.linkedProjects": [
         ".\\cli\\Cargo.toml",
+    ],
+    "cSpell.words": [
+        "fursion"
     ]
 }
