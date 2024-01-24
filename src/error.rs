@@ -10,6 +10,7 @@ pub enum Error {
     RepoFetchFailed(String),
     HostError(HostErrorKind),
     CommitParseFailed(CommitParseFailedReason),
+    SerdeError(String),
     Unknown(String),
 }
 
@@ -38,10 +39,18 @@ macro_rules! impl_from_error {
             }
         }
     };
+    ($from_type:ty, $error_type:ident) => {
+        impl From<$from_type> for Error {
+            fn from(value: $from_type) -> Self {
+                Error::$error_type(value.to_string())
+            }
+        }
+    };
 }
 
 impl_from_error!(Utf8Error);
 impl_from_error!(std::io::Error);
+impl_from_error!(serde_json::Error, SerdeError);
 
 #[derive(Debug, Serialize)]
 pub enum RepoErrorReason {
@@ -61,6 +70,7 @@ pub enum HostErrorKind {
 
 #[derive(Debug, Serialize)]
 pub enum CommitParseFailedReason {
+    CommitIdParseFailed,
     FileChangeDataNotFound,
     FileChangeDataMalformed,
 }

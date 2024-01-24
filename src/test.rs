@@ -1,6 +1,10 @@
 use std::path::Path;
 
-use crate::{commit::Commit, repo::Repo, server::Server};
+use crate::{
+    commit::{Commit, CommitId, FileChanges},
+    repo::Repo,
+    server::Server,
+};
 
 #[test]
 fn read() {
@@ -14,9 +18,10 @@ fn init() {
 }
 
 #[test]
-fn commit() {
-    let commit = Commit::new("test");
-    panic!("{:?}", commit.hex_id());
+/// Tests if commit id to/from hex conversion works
+fn commit_id_hex() {
+    let commit = Commit::new("test", FileChanges::default());
+    assert_eq!(commit.id, CommitId::from_hex(&commit.id.to_hex()).unwrap());
 }
 
 #[actix_web::test]

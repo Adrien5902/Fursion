@@ -4,22 +4,94 @@ use std::{fs, ops::Range, panic::catch_unwind, path::Path};
 
 use crate::error::{CommitParseFailedReason, Error};
 
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
+pub struct CommitId([u8; 3]);
+
+impl CommitId {
+    /// Init function which outputs a random commit id
+    fn new() -> Self {
+        Self(rand::random())
+    }
+
+    /// Gives back an hex value which equals to the commit id
+    /// The hex value looks something like ```69FC64```
+    pub fn to_hex(&self) -> String {
+        format!("{:X?}", self.0)
+            .replace(", ", "")
+            .strip_prefix("[")
+            .unwrap()
+            .strip_suffix("]")
+            .unwrap()
+            .to_owned()
+    }
+
+    pub fn from_hex(s: &str) -> Result<Self, Error> {
+        let vec = vec![&s[0..=1], &s[2..=3], &s[4..=5]];
+
+        let num_vec = vec
+            .iter()
+            .map(|s| u8::from_str_radix(s, 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| Error::CommitParseFailed(CommitParseFailedReason::CommitIdParseFailed))?;
+
+        let slice = num_vec
+            .try_into()
+            .map_err(|_| Error::CommitParseFailed(CommitParseFailedReason::CommitIdParseFailed))?;
+
+        Ok(CommitId(slice))
+    }
+}
+
 /// A commit with a message and an id
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Commit {
     /// The message associated with the commit
     pub message: String,
     /// A random 3 bytes id can be displayed as 6 digits hex
-    pub id: [u8; 3],
-    changes: Vec<FileChange>,
+    pub id: CommitId,
+    changes: FileChanges,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct FileChanges(Vec<FileChange>);
+impl FileChanges {
+    pub fn new(value: Vec<FileChange>) -> Self {
+        Self(value)
+    }
+
+    pub fn from_file(path: &Path) -> Result<Self, Error> {
+        let file_data = fs::read(path)?;
+        let file_str = std::str::from_utf8(&file_data)?;
+        Self::from_str(file_str)
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, Error> {
+        let changes_iter = s.split(FileChange::DELIMITER);
+        let vec = changes_iter
+            .map(FileChange::from_str)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self::new(vec))
+    }
+
+    pub fn to_string(&self) -> String {
+        self.0
+            .iter()
+            .map(FileChange::to_string)
+            .collect::<Vec<_>>()
+            .join(FileChange::DELIMITER)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct FileChange {
-    file_path: String,
-    range: Range<usize>,
-    text: Option<String>,
-    operation: FileChangeOperation,
+    pub file_path: String,
+    pub range: Range<usize>,
+    pub text: Option<String>,
+    pub operation: FileChangeOperation,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
@@ -59,59 +131,47 @@ impl Into<String> for FileChangeOperation {
 }
 
 impl FileChange {
-    pub const DELIMITER: &'static str = "END_FURSION_CHANGE";
-
-    pub fn from_file(path: &Path) -> Result<Vec<Self>, Error> {
-        let delimiter1 = "\n".to_string() + Self::DELIMITER;
-        let delimiter2 = "\r\n".to_string() + Self::DELIMITER;
-
-        let file_data = fs::read(path)?;
-        let file_str = std::str::from_utf8(&file_data)?;
-        let changes_iter = file_str
-            .split(delimiter1.as_str())
-            .map(|s| s.split(delimiter2.as_str()))
-            .flatten();
-
-        changes_iter.map(Self::from_str).collect()
-    }
+    pub const DELIMITER: &'static str = "\nEND_FURSION_CHANGE";
 
     pub fn from_str(str: &str) -> Result<FileChange, Error> {
-        let mut lines = str.lines();
+        catch_unwind(|| {
+            let meta_str = str
+                .lines()
+                .collect::<Vec<_>>()
+                .first()
+                .and_then(|s| Some(*s))
+                .ok_or(Error::CommitParseFailed(
+                    CommitParseFailedReason::FileChangeDataNotFound,
+                ))?;
 
-        let meta = lines
-            .next()
-            .ok_or(Error::CommitParseFailed(
-                CommitParseFailedReason::FileChangeDataNotFound,
-            ))?
-            .split("|")
-            .collect::<Vec<_>>();
+            let meta = meta_str.split("|").collect::<Vec<_>>();
 
-        let operation = FileChangeOperation::from_str(meta[2]);
+            let operation = FileChangeOperation::from_str(meta[2]);
 
-        let text = if operation == FileChangeOperation::Deletion {
-            None
-        } else {
-            Some(lines.collect::<Vec<_>>().join("\n"))
-        };
+            let text = if operation == FileChangeOperation::Deletion {
+                None
+            } else {
+                Some(str[meta_str.len()..].to_string())
+            };
 
-        let range_nums: Vec<usize> = meta[1]
-            .split("..")
-            .map(str::parse::<usize>)
-            .collect::<Result<_, _>>()
-            .map_err(|_| {
-                Error::CommitParseFailed(CommitParseFailedReason::FileChangeDataMalformed)
-            })?;
+            let range_nums: Vec<usize> = meta[1]
+                .split("..")
+                .map(str::parse::<usize>)
+                .collect::<Result<_, _>>()
+                .map_err(|_| {
+                    Error::CommitParseFailed(CommitParseFailedReason::FileChangeDataMalformed)
+                })?;
 
-        let range = catch_unwind(|| range_nums[0]..range_nums[1]).map_err(|_| {
-            Error::CommitParseFailed(CommitParseFailedReason::FileChangeDataMalformed)
-        })?;
+            let range = range_nums[0]..range_nums[1];
 
-        Ok(FileChange {
-            file_path: meta[0].to_string(),
-            range,
-            text,
-            operation,
+            Ok(FileChange {
+                file_path: meta[0].to_string(),
+                range,
+                text,
+                operation,
+            })
         })
+        .map_err(|_| Error::CommitParseFailed(CommitParseFailedReason::FileChangeDataMalformed))?
     }
 
     pub fn to_string(&self) -> String {
@@ -126,26 +186,45 @@ impl FileChange {
 }
 
 impl Commit {
+    pub const DELIMITER: &'static str = "\nFURSION_COMMIT";
+
     /// Makes a new commit object with a pseudo-random id
-    pub(crate) fn new(message: &str, changes: Vec<FileChange>) -> Self {
+    pub(crate) fn new(message: &str, changes: FileChanges) -> Self {
         Commit {
             changes,
             message: message.to_owned(),
-            id: rand::random(),
+            id: CommitId::new(),
         }
     }
 
-    /// Gives back an hex value which equals to the commit random id
-    /// The hex value looks something like ```69FC64```
-    pub fn hex_id(&self) -> String {
-        format!("{:X?}", self.id)
-            .replace(", ", "")
-            .strip_prefix("[")
-            .unwrap()
-            .strip_suffix("]")
-            .unwrap()
-            .to_owned()
+    pub fn to_string(&self) -> String {
+        let changes_str = self
+            .changes
+            .0
+            .iter()
+            .map(|change| change.to_string())
+            .collect::<Vec<_>>()
+            .join(FileChange::DELIMITER);
+
+        format!("{}", changes_str)
     }
 
-    pub fn to_string() {}
+    pub fn from_str(s: &str) -> Result<Self, Error> {
+        let data_str = s.lines().collect::<Vec<_>>()[0];
+        let data = data_str.split("|").collect::<Vec<_>>();
+
+        let changes = s[data_str.len()..]
+            .split(FileChange::DELIMITER)
+            .map(FileChange::from_str)
+            .collect::<Result<_, _>>()?;
+
+        let message = data[1].to_string();
+        let id = CommitId::from_hex(data[0])?;
+
+        Ok(Self {
+            message,
+            id,
+            changes: FileChanges::new(changes),
+        })
+    }
 }
