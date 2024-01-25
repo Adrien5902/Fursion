@@ -8,7 +8,7 @@ use futures;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    commit::{Commit, FileChange, FileChanges},
+    commit::{Commit, FileChanges},
     error::{Error, RepoErrorReason},
     remote::Remote,
 };
@@ -30,6 +30,8 @@ pub struct Repo {
     stated_changes: FileChanges,
     /// The path leading to the repo on the system
     pub path: PathBuf,
+    /// List of ignored file names, like .gitignore
+    pub ignored: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -64,33 +66,42 @@ impl RepoHistory {
         self.vec.push(commit)
     }
 
-    pub fn read(path: &Path) -> Result<Self, Error> {
-        let data = fs::read(path)?;
-        let s = std::str::from_utf8(&data)?;
-        Self::from_str(s)
-    }
-
-    pub fn to_string(&self) -> String {
+    pub fn save(&self, fursion_dir_path: &Path) -> Result<(), Error> {
         self.vec
             .iter()
-            .map(|commit| commit.to_string())
-            .collect::<Vec<_>>()
-            .join(Commit::DELIMITER)
+            .map(|commit| {
+                fs::write(
+                    Self::get_path(fursion_dir_path).join(commit.id.to_hex()),
+                    commit.to_string(),
+                )?;
+                Ok(())
+            })
+            .collect()
     }
 
-    pub fn from_str(s: &str) -> Result<Self, Error> {
-        let commits = s
-            .split(Commit::DELIMITER)
-            .map(|commit_str| Commit::from_str(commit_str))
-            .collect::<Result<Vec<_>, _>>()?;
+    pub fn read(fursion_dir_path: &Path) -> Result<Self, Error> {
+        let commits = fs::read_dir(Self::get_path(fursion_dir_path))?
+            .map(|res| {
+                let path = res?.path();
+                let data = fs::read(&path)?;
+                let s = std::str::from_utf8(&data)?;
+                let commit = Commit::from_str(s)?;
+                Ok(commit)
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
 
         Ok(Self { vec: commits })
+    }
+
+    fn get_path(fursion_dir_path: &Path) -> PathBuf {
+        fursion_dir_path.join(Self::FILE_NAME)
     }
 }
 
 const EXCLUDE_FURSION_DIR: fn(&OsStr) -> bool = |file_name| file_name != FURSION_DIR;
 
 impl Repo {
+    const IGNORED_FILE_NAME: &'static str = ".fursionignore";
     const STATED_CHANGES_FILE_NAME: &'static str = "stated";
 
     pub fn read(path: &Path) -> Result<Self, Error> {
@@ -142,7 +153,8 @@ impl Repo {
         let state_path = fursion_dir.join("state");
         let stated_changes = FileChanges::from_file(&state_path)?;
 
-        let history = RepoHistory::read(&fursion_dir.join(RepoHistory::FILE_NAME))?;
+        let history = RepoHistory::read(&fursion_dir)?;
+        let ignored = Self::get_ignored(path)?;
 
         Ok(Repo {
             path: path.to_owned(),
@@ -151,11 +163,17 @@ impl Repo {
             files,
             remotes,
             history,
+            ignored,
         })
     }
 
     pub fn init(path: &Path) -> Result<Self, Error> {
         let fursion_path = path.join(FURSION_DIR);
+        if Path::exists(&fursion_path) {
+            return Err(Error::RepoInitFailed(RepoErrorReason::RepoAlreadyExists(
+                path.to_owned(),
+            )));
+        }
 
         fs::create_dir_all(&fursion_path).map_err(|e| {
             Error::RepoInitFailed(RepoErrorReason::CantCreateFile(
@@ -163,6 +181,8 @@ impl Repo {
                 e.to_string(),
             ))
         })?;
+
+        let ignored = Self::get_ignored(path)?;
 
         let repo = Repo {
             path: path.to_owned(),
@@ -180,9 +200,10 @@ impl Repo {
             remotes: Vec::new(),
             files: recursive_read_dir(path, EXCLUDE_FURSION_DIR)?,
             history: RepoHistory::new(),
+            ignored,
         };
 
-        repo.save()?;
+        repo.save_all()?;
 
         Ok(repo)
     }
@@ -197,6 +218,8 @@ impl Repo {
         let commit = Commit::new(message, changes);
 
         self.history.push(commit);
+
+        self.save_history()?;
         Ok(())
     }
 
@@ -205,27 +228,58 @@ impl Repo {
         Ok(FileChanges::default())
     }
 
-    pub fn save(&self) -> Result<(), Error> {
+    pub fn save_all(&self) -> Result<(), Error> {
+        self.save_history()?;
+        self.save_metadata()?;
+        self.save_stated_changes()?;
+
         let fursion_dir = self.path.join(FURSION_DIR);
-
-        fs::write(
-            fursion_dir.join(RepoHistory::FILE_NAME),
-            self.history.to_string(),
-        )?;
-
         fs::write(fursion_dir.join(Remote::FILE_NAME), "")?; // WIP
 
+        Ok(())
+    }
+
+    pub fn save_history(&self) -> Result<(), Error> {
+        let fursion_dir = self.path.join(FURSION_DIR);
+        self.history.save(&fursion_dir)
+    }
+
+    pub fn save_metadata(&self) -> Result<(), Error> {
+        let fursion_dir = self.path.join(FURSION_DIR);
         fs::write(
             fursion_dir.join(RepoMetadata::FILE_NAME),
             serde_json::to_string(&self.metadata)?,
         )?;
+        Ok(())
+    }
 
+    pub fn save_stated_changes(&self) -> Result<(), Error> {
+        let fursion_dir = self.path.join(FURSION_DIR);
         fs::write(
             fursion_dir.join(Self::STATED_CHANGES_FILE_NAME),
             self.stated_changes.to_string(),
         )?;
-
         Ok(())
+    }
+
+    pub fn get_ignored(repo_path: &Path) -> Result<Vec<String>, Error> {
+        let ignored_path = repo_path.join(Self::IGNORED_FILE_NAME);
+        let ignored = if Path::exists(&ignored_path) {
+            let data = fs::read(ignored_path)?;
+            let str = std::str::from_utf8(&data)?;
+            str.lines()
+                .filter_map(|line| {
+                    if line == "" || line.starts_with("#") || line.starts_with("//") {
+                        None
+                    } else {
+                        Some(line.to_owned())
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        Ok(ignored)
     }
 
     pub fn pull(&mut self) {}

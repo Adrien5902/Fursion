@@ -186,8 +186,6 @@ impl FileChange {
 }
 
 impl Commit {
-    pub const DELIMITER: &'static str = "\nFURSION_COMMIT";
-
     /// Makes a new commit object with a pseudo-random id
     pub(crate) fn new(message: &str, changes: FileChanges) -> Self {
         Commit {
@@ -206,7 +204,7 @@ impl Commit {
             .collect::<Vec<_>>()
             .join(FileChange::DELIMITER);
 
-        format!("{}", changes_str)
+        format!("{}|{}\n{}", self.id.to_hex(), self.message, changes_str)
     }
 
     pub fn from_str(s: &str) -> Result<Self, Error> {

@@ -1,8 +1,8 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use crate::{
     commit::{Commit, CommitId, FileChanges},
-    repo::Repo,
+    repo::{self, Repo},
     server::Server,
 };
 
@@ -13,8 +13,11 @@ fn read() {
 }
 
 #[test]
-fn init() {
-    let repo = Repo::init(Path::new("C:\\Users\\Administrateur\\Desktop\\Test")).unwrap();
+fn main() {
+    let path = Path::new("C:\\Users\\adrie\\Desktop\\Some Folder");
+    fs::remove_dir_all(path.join(repo::FURSION_DIR)).unwrap();
+    let repo = Repo::init(&path).unwrap();
+    println!("{:?}", repo);
 }
 
 #[test]
@@ -26,5 +29,5 @@ fn commit_id_hex() {
 
 #[actix_web::test]
 async fn host() {
-    Server::new().await;
+    Server::new().await.unwrap();
 }

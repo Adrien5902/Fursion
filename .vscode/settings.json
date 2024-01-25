@@ -3,6 +3,7 @@
         ".\\cli\\Cargo.toml",
     ],
     "cSpell.words": [
-        "fursion"
+        "fursion",
+        "fursionignore"
     ]
 }

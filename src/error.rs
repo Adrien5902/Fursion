@@ -54,6 +54,7 @@ impl_from_error!(serde_json::Error, SerdeError);
 
 #[derive(Debug, Serialize)]
 pub enum RepoErrorReason {
+    RepoAlreadyExists(PathBuf),
     CantCreateFile(PathBuf, String),
     CantReadFile(PathBuf, String),
     PathNotFound(PathBuf),
