@@ -27,7 +27,7 @@ pub struct Repo {
     /// The repo metadata mainly author name and repo name
     pub metadata: RepoMetadata,
     /// List of stated changes in the repo
-    stated_changes: FileChanges,
+    pub stated_changes: Vec<FileChanges>,
     /// The path leading to the repo on the system
     pub path: PathBuf,
     /// List of ignored file names, like .gitignore

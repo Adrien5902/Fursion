@@ -52,4 +52,8 @@ impl Server {
     async fn reload(&mut self, repos: Vec<Repo>) -> Result<(), Error> {
         Ok(())
     }
+
+    fn host_repo(self, repo: Repo){
+        SERVER_STATE.lock().unwrap()
+    }
 }

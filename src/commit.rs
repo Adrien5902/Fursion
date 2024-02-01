@@ -53,16 +53,17 @@ pub struct Commit {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct FileChanges(Vec<FileChange>);
-impl FileChanges {
-    pub fn new(value: Vec<FileChange>) -> Self {
-        Self(value)
-    }
+pub struct FileChanges {
+    path: String,
+    changes: Vec<FileChange>,
+}
 
-    pub fn from_file(path: &Path) -> Result<Self, Error> {
-        let file_data = fs::read(path)?;
-        let file_str = std::str::from_utf8(&file_data)?;
-        Self::from_str(file_str)
+impl FileChanges {
+    pub fn new(path: String, changes: Vec<FileChange>) -> Self {
+        FileChanges{
+            path,
+            changes,
+        }
     }
 
     pub fn from_str(s: &str) -> Result<Self, Error> {
@@ -74,21 +75,18 @@ impl FileChanges {
     }
 
     pub fn to_string(&self) -> String {
-        self.0
+        let changes = self.changes
             .iter()
             .map(FileChange::to_string)
             .collect::<Vec<_>>()
-            .join(FileChange::DELIMITER)
-    }
+            .join(FileChange::DELIMITER);
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        format!("{}\n{}", self.path, changes)
     }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct FileChange {
-    pub file_path: String,
     pub range: Range<usize>,
     pub text: Option<String>,
     pub operation: FileChangeOperation,
@@ -98,21 +96,24 @@ pub struct FileChange {
 pub enum FileChangeOperation {
     Insertion,
     Deletion,
+    Edit,
 }
 
 impl FileChangeOperation {
     fn to_string(&self) -> String {
         match self {
-            Self::Deletion => "DEL",
-            Self::Insertion => "INS",
+            Self::Deletion => "-",
+            Self::Insertion => "+",
+            Self::Edit => "e",
         }
         .to_string()
     }
 
     fn from_str(s: &str) -> Self {
         match s {
-            "DEL" => Self::Deletion,
-            "INS" => Self::Insertion,
+            "-" => Self::Deletion,
+            "+" => Self::Insertion,
+            "e" => Self::Edit,
             _ => panic!("Invalid FileChangeOperation string: {}", s),
         }
     }
@@ -146,7 +147,7 @@ impl FileChange {
 
             let meta = meta_str.split("|").collect::<Vec<_>>();
 
-            let operation = FileChangeOperation::from_str(meta[2]);
+            let operation = FileChangeOperation::from_str(meta[1]);
 
             let text = if operation == FileChangeOperation::Deletion {
                 None
@@ -154,7 +155,7 @@ impl FileChange {
                 Some(str[meta_str.len()..].to_string())
             };
 
-            let range_nums: Vec<usize> = meta[1]
+            let range_nums: Vec<usize> = meta[0]
                 .split("..")
                 .map(str::parse::<usize>)
                 .collect::<Result<_, _>>()
@@ -165,7 +166,6 @@ impl FileChange {
             let range = range_nums[0]..range_nums[1];
 
             Ok(FileChange {
-                file_path: meta[0].to_string(),
                 range,
                 text,
                 operation,
@@ -176,8 +176,7 @@ impl FileChange {
 
     pub fn to_string(&self) -> String {
         format!(
-            "{}|{}..{}|{}",
-            self.file_path,
+            "{}..{}|{}",
             self.range.start,
             self.range.end,
             self.operation.to_string()
